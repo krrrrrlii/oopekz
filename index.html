@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Прогноз погоды</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        label {
+            margin-bottom: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        input {
+            padding: 10px;
+            font-size: 16px;
+            margin-bottom: 20px;
+            width: 300px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        select {
+            padding: 10px;
+            font-size: 16px;
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        button {
+            padding: 15px;
+            font-size: 18px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        h2 {
+            margin-top: 30px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        strong {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        p {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #555;
+        }
+
+        small {
+            font-size: 14px;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+
+    <label for="searchMethod">Выберите метод поиска:</label>
+    <select id="searchMethod">
+        <option value="city">По названию города</option>
+        <option value="coordinates">По координатам</option>
+    </select>
+
+    <div id="cityInputContainer">
+        <label for="city">Название города:</label>
+        <input type="text" id="city" placeholder="Введите название города">
+    </div>
+
+    <div id="coordinatesInputContainer" style="display: none;">
+        <label for="latitude">Широта:</label>
+        <input type="text" id="latitude" placeholder="Введите широту">
+
+        <label for="longitude">Долгота:</label>
+        <input type="text" id="longitude" placeholder="Введите долготу">
+    </div>
+
+    <button id="getDataButton">Получить данные о погоде</button>
+
+    <h2 id="weatherForecast">Прогноз погоды:</h2>
+
+    <script>
+        class WeatherApp {
+            constructor() {
+                this.weatherForecastElement = document.getElementById('weatherForecast');
+                this.searchMethodSelect = document.getElementById('searchMethod');
+                this.cityInputContainer = document.getElementById('cityInputContainer');
+                this.coordinatesInputContainer = document.getElementById('coordinatesInputContainer');
+                this.cityInput = document.getElementById('city');
+                this.latitudeInput = document.getElementById('latitude');
+                this.longitudeInput = document.getElementById('longitude');
+                this.getDataButton = document.getElementById('getDataButton');
+
+                this.searchMethodSelect.addEventListener('change', this.toggleInputContainers.bind(this));
+                this.getDataButton.addEventListener('click', this.getData.bind(this));
+            }
+
+            toggleInputContainers() {
+                const isCoordinates = this.searchMethodSelect.value === 'coordinates';
+
+                this.cityInputContainer.style.display = isCoordinates ? 'none' : 'block';
+                this.coordinatesInputContainer.style.display = isCoordinates ? 'block' : 'none';
+            }
+
+            async getData() {
+                try {
+                    const isCoordinates = this.searchMethodSelect.value === 'coordinates';
+
+                    const locationInput = isCoordinates ? 'coordinates' : this.cityInput;
+                    const location = isCoordinates ? `${this.latitudeInput.value},${this.longitudeInput.value}` : locationInput.value;
+
+                    const geoResponse = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${location}&limit=1`, {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                    });
+
+                    const geoData = await geoResponse.json();
+
+                    if (geoData.length === 0) {
+                        throw new Error('Место не найдено');
+                    }
+
+                    const latitude = isCoordinates ? this.latitudeInput.value : geoData[0].lat;
+                    const longitude = isCoordinates ? this.longitudeInput.value : geoData[0].lon;
+
+                    const response = await fetch(`http://localhost:5000/weather?lat=${latitude}&lon=${longitude}`, {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                    });
+
+                    const data = await response.json();
+                    console.log(data);
+
+                    this.displayWeatherForecast(geoData[0].display_name, latitude, longitude, data);
+
+                } catch (error) {
+                    console.error('Ошибка при получении данных:', error.message);
+                }
+            }
+
+            displayWeatherForecast(city, latitude, longitude, data) {
+                this.weatherForecastElement.innerHTML = `Прогноз погоды для ${city || 'координат (' + latitude + ', ' + longitude + ')'}:<br>`;
+
+                data.forecasts.forEach((forecast, index) => {
+                    const date = new Date(forecast.date);
+                    const dayOfMonth = date.getDate();
+                    const monthName = date.toLocaleString('en', { month: 'long' });
+
+                    this.weatherForecastElement.innerHTML += `
+                        <p>
+                            <strong>${dayOfMonth} ${monthName}</strong>: 
+                            Температура ночью: ${forecast.parts.night.temp_avg}°C, 
+                            Температура днем: ${forecast.parts.day.temp_avg}°C, 
+                            Описание: ${this.translateWeatherCondition(forecast.parts.day.condition)}, 
+                            Восход солнца: ${forecast.sunrise}, 
+                            Заход солнца: ${forecast.sunset}<br>
+                            <small>Рекомендации по одежде: ${this.getClothingRecommendation(forecast.parts.day.temp_avg, forecast.parts.day.condition)}</small>
+                        </p>`;
+                });
+            }
+
+            translateWeatherCondition(condition) {
+                const translations = {
+                    'clear': 'ясно',
+                    'partly-cloudy': 'малооблачно',
+                    'cloudy': 'облачно с прояснениями',
+                    'overcast': 'пасмурно',
+                    'light-rain': 'небольшой дождь',
+                    'rain': 'дождь',
+                    'heavy-rain': 'сильный дождь',
+                    'showers': 'ливень',
+                    'wet-snow': 'дождь со снегом',
+                    'light-snow': 'небольшой снег',
+                    'snow': 'снег',
+                    'snow-showers': 'снегопад',
+                    'hail': 'град',
+                    'thunderstorm': 'гроза',
+                    'thunderstorm-with-rain': 'дождь с грозой',
+                    'thunderstorm-with-hail': 'гроза с градом',
+                };
+
+                return translations[condition] || condition;
+            }
+
+            getClothingRecommendation(temperature, condition) {
+                let recommendation = '';
+
+                if (temperature < 0) {
+                    recommendation = 'Теплая зимняя одежда, шапка, варежки и теплые ботинки.';
+                } else if (temperature < 10) {
+                    recommendation = 'Теплая осенняя одежда, свитер или кофта.';
+                } else if (temperature < 20) {
+                    recommendation = 'Легкая куртка или свитер.';
+                } else {
+                    recommendation = 'Легкая одежда: футболка и шорты или платье.';
+                }
+
+                switch (condition) {
+                    case 'rain':
+                    case 'light-rain':
+                    case 'heavy-rain':
+                    case 'showers':
+                    case 'thunderstorm':
+                    case 'thunderstorm-with-rain':
+                        recommendation += ' Возьмите зонт и непромокаемую обувь.';
+                        break;
+                    case 'snow':
+                    case 'light-snow':
+                    case 'snow-showers':
+                    case 'wet-snow':
+                        recommendation += ' Возьмите теплую куртку и утепленную обувь.';
+                        break;
+                    case 'overcast':
+                        recommendation += ' Может понадобиться зонт.';
+                        break;
+                    case 'partly-cloudy':
+                        recommendation += ' Защита от солнца (крем, шляпа), если температура плюсовая.';
+                        break;
+                    case 'clear':
+                        recommendation += ' Защита от солнца (крем, шляпа, солнцезащитные очки), если температура плюсовая.';
+                        break;
+                    default:
+                        break;
+                }
+
+
+                if (temperature > 0) {
+                    recommendation += ' Возможно, стоит взять солнцезащитный крем.';
+                }
+
+                return recommendation;
+            }
+        }
+
+
+        class FeelTemperatureApp extends WeatherApp {
+            constructor() {
+                super();
+                this.feelTemperatureElement = document.getElementById('feelTemperature');
+            }
+
+            displayWeatherForecast(city, latitude, longitude, data) {
+                super.displayWeatherForecast(city, latitude, longitude, data);
+
+                this.feelTemperatureElement.innerHTML = `Ощущаемая температура: ${data.fact.feels_like}°C`;
+            }
+        }
+
+        const feelTemperatureApp = new FeelTemperatureApp();
+    </script>
+
+</body>
+</html>
